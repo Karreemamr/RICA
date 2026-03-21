@@ -32,7 +32,6 @@ const RICA_FIREBASE_CONFIG = {
   storageBucket:     "rica-426b9.firebasestorage.app",
   messagingSenderId: "211490839079",
   appId:             "1:211490839079:web:ab3f51aace86496acb8c02"
-    measurementId:         "G-Q1R29Z5N4K"
 };
 
 /* ── 2. FIREBASE SDK LOADER ──────────────────────────────────────
