@@ -1769,8 +1769,8 @@
  <div class="login-sub">Sign in to continue</div>
 
  <div class="login-field">
- <label class="login-label">Username</label>
- <input type="text" class="login-input" id="login-username" placeholder="Username" autocomplete="username" spellcheck="false" onkeydown="if(event.key===&#39;Enter&#39;)document.getElementById(&#39;login-password&#39;).focus()">
+ <label class="login-label">Email</label>
+ <input type="email" class="login-input" id="login-username" placeholder="your@email.com" autocomplete="email" spellcheck="false" onkeydown="if(event.key===&#39;Enter&#39;)document.getElementById(&#39;login-password&#39;).focus()">
  <div id="login-username-hint" style="font-size:11px;color:#888;margin-top:4px;text-align:center;"></div>
 </div>
  <div class="login-field">
@@ -1779,7 +1779,7 @@
 </div>
 
  <button class="login-btn" id="login-btn" onclick="doLogin()">Sign In</button>
- <div class="login-error" id="login-error">Incorrect username or password.</div>
+ <div class="login-error" id="login-error">Incorrect email or password.</div>
  <div style="text-align:center;margin-top:14px;">
   <span onclick="showForgotPassword()" style="font-size:12px;color:#888;cursor:pointer;text-decoration:underline;">Forgot your password?</span>
  </div>
@@ -9951,9 +9951,9 @@ function doSignUp() {
    loginOverlay.style.opacity = '1';
  }, 10);
 
- // Pre-fill username and show success hint
+ // Pre-fill email and show success hint
  var loginUsernameEl = document.getElementById('login-username');
- if (loginUsernameEl) loginUsernameEl.value = username;
+ if (loginUsernameEl) loginUsernameEl.value = email;
  var loginErrEl = document.getElementById('login-error');
  if (loginErrEl) {
    loginErrEl.textContent = '✅ Account created! Please sign in to continue.';
@@ -10401,14 +10401,15 @@ function submitNewPassword() {
  }
 
  _otpVerified = false;
+ var _savedEmail = (_forgotAccount && _forgotAccount.email) ? _forgotAccount.email : '';
  _forgotAccount = null;
  closeForgotPassword();
 
- // Pre-fill username on login screen
+ // Pre-fill email on login screen after password reset
  var loginOverlay = document.getElementById('login-overlay');
  loginOverlay.style.display = 'flex';
  loginOverlay.style.opacity = '1';
- var _g28=document.getElementById('login-username'); if(_g28) _g28.value=targetUsername;
+ var _g28=document.getElementById('login-username'); if(_g28) _g28.value=_savedEmail;
  var _g29=document.getElementById('login-password'); if(_g29) _g29.value='';
  document.getElementById('login-password').focus();
  var lErr = document.getElementById('login-error');
@@ -10439,13 +10440,13 @@ function doLogin() {
  setTimeout(function() {
  btn.disabled = false;
  btn.classList.remove('loading');
- btn.textContent = 'Sign In \u00a0\u2014\u00a0 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644';
+ btn.textContent = 'Sign In';
 
  var activePassword = getActivePassword();
 
  // Check if this account has been terminated
  var _allAccts = getAccounts();
- var _thisAcct = _allAccts.find(function(a){ return a.username.toLowerCase() === username.toLowerCase(); });
+ var _thisAcct = _allAccts.find(function(a){ return a.email && a.email.toLowerCase() === username.toLowerCase(); });
  if (_thisAcct && _thisAcct.terminated) {
    errEl.classList.remove('show');
    void errEl.offsetWidth;
@@ -10469,20 +10470,20 @@ function doLogin() {
    return;
  }
 
- // Check against accounts array (primary) OR legacy keys (fallback)
- var _matched = (_thisAcct && _thisAcct.password === password) ||
-                (username === getActiveUsername() && password === activePassword);
+ // Check against accounts array by email
+ var _matched = (_thisAcct && _thisAcct.password === password);
 
  if (_matched) {
   // Sync legacy keys so rest of app (password change etc) works correctly
-  localStorage.setItem(LS_USERNAME_KEY, username);
-  localStorage.setItem('rica_active_user', username.toLowerCase()); // permanent DB key
-  localStorage.setItem(LS_PASSWORD_KEY, _thisAcct ? _thisAcct.password : password);
+  var _acctUsername = _thisAcct.username;
+  localStorage.setItem(LS_USERNAME_KEY, _acctUsername);
+  localStorage.setItem('rica_active_user', _acctUsername.toLowerCase()); // permanent DB key
+  localStorage.setItem(LS_PASSWORD_KEY, _thisAcct.password);
   // Restore full name in sidebar
   var _fn = (_thisAcct && _thisAcct.firstname) ? _thisAcct.firstname : '';
   var _ln = (_thisAcct && _thisAcct.lastname)  ? _thisAcct.lastname  : '';
   var _fullName = (_fn + ' ' + _ln).trim();
-  setUserItem('rica_display_name', _fullName || username);
+  setUserItem('rica_display_name', _fullName || _acctUsername);
   var _ss = document.getElementById('brand-sub-sidebar');
   if (_ss) _ss.textContent = 'Management';
   applySidebarFullName();
