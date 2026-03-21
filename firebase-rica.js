@@ -26,12 +26,13 @@
    Project Settings → Your apps → Web app → SDK setup → Config
    ────────────────────────────────────────────────────────────── */
 const RICA_FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyDSZKfdOxbJqqMeGbEdcjDwIgzG7X5KdLE",
-  authDomain:        "rica-426b9.firebaseapp.com",
-  projectId:         "rica-426b9",
-  storageBucket:     "rica-426b9.firebasestorage.app",
+  apiKey: "AIzaSyDSZKfdOxbJqqMeGbEdcjDwIgzG7X5KdLE",
+  authDomain: "rica-426b9.firebaseapp.com",
+  projectId: "rica-426b9",
+  storageBucket: "rica-426b9.firebasestorage.app",
   messagingSenderId: "211490839079",
-  appId:             "1:211490839079:web:ab3f51aace86496acb8c02"
+  appId: "1:211490839079:web:ab3f51aace86496acb8c02",
+  measurementId: "G-Q1R29Z5N4K"
 };
 
 /* ── 2. FIREBASE SDK LOADER ──────────────────────────────────────
