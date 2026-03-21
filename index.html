@@ -1703,8 +1703,14 @@
             localStorage.removeItem(prefix + table);
           }
           if (typeof DB !== 'undefined') DB.invalidateCache();
-          if (typeof updateStatusBar    === 'function') updateStatusBar();
-          if (typeof renderCurrentTable === 'function') renderCurrentTable();
+          /* Re-render everything */
+          setTimeout(function() {
+            if (typeof updateStatusBar    === 'function') updateStatusBar();
+            if (typeof renderCurrentTable === 'function') renderCurrentTable();
+            if (typeof renderDashboard    === 'function') renderDashboard();
+            if (typeof renderKPICards     === 'function') renderKPICards();
+            if (typeof syncKPIs           === 'function') syncKPIs();
+          }, 100);
         }, function(e){ console.warn('[FS] listener error:', table, e.message); });
       _fsListeners.push(unsub);
     });
