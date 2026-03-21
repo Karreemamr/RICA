@@ -9850,6 +9850,8 @@ function doSignUp() {
  if (!/^[A-Za-z0-9_-؀-ۿ]+$/.test(username)) { showErr('Username: letters, numbers, _ and - only.'); return; }
  if (password.length < 6) { showErr('Password must be at least 6 characters.'); return; }
  if (password !== confirm) { showErr('Passwords do not match.'); return; }
+ if (!email) { showErr('Email address is required to create an account.'); document.getElementById('signup-email').focus(); return; }
+ if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email address.'); document.getElementById('signup-email').focus(); return; }
  if (!sqKey) { showErr('Please choose a security question.'); return; }
  if (!sqAnswer) { showErr('Please enter your answer to the security question.'); return; }
 
@@ -10446,7 +10448,11 @@ function doLogin() {
 
  // Check if this account has been terminated
  var _allAccts = getAccounts();
+ // Primary: search by email. Fallback: search by username (for old accounts without email)
  var _thisAcct = _allAccts.find(function(a){ return a.email && a.email.toLowerCase() === username.toLowerCase(); });
+ if (!_thisAcct) {
+   _thisAcct = _allAccts.find(function(a){ return a.username && a.username.toLowerCase() === username.toLowerCase(); });
+ }
  if (_thisAcct && _thisAcct.terminated) {
    errEl.classList.remove('show');
    void errEl.offsetWidth;
