@@ -1660,13 +1660,48 @@
 </style>
 
   <!-- ═══════════════════════════════════════
-       FIREBASE AUTH — Cross-device login
+       FIREBASE AUTH + FIRESTORE — Cloud sync
   ═══════════════════════════════════════ -->
   <script>
   /* Stubs — prevent ReferenceError before Firebase loads */
   var _firebaseAuth = null;
   var _firebaseApp  = null;
+  var _fsDb         = null;   // Firestore instance
   window._cloudSyncEnabled = false;
+
+  var _FS_TABLES = ['orders','order_items','inventory','finance','kpis',
+                    'pricing','products','customers','shipping','returns','ledger'];
+
+  /* ── Save one table to Firestore ── */
+  function _fsSave(table, records) {
+    if (!_fsDb || !_firebaseAuth || !_firebaseAuth.currentUser) return;
+    var uid = _firebaseAuth.currentUser.uid;
+    _fsDb.collection('users').doc(uid)
+         .collection('tables').doc(table)
+         .set({ records: records, _updated: new Date().toISOString() })
+         .catch(function(e){ console.warn('Firestore write error:', e); });
+  }
+
+  /* ── Load all tables from Firestore → localStorage then show app ── */
+  function _fsLoadAll(uid, callback) {
+    var prefix = 'rica_' + uid + '_';
+    var promises = _FS_TABLES.map(function(table) {
+      return _fsDb.collection('users').doc(uid)
+                  .collection('tables').doc(table)
+                  .get()
+                  .then(function(doc) {
+                    if (doc.exists && doc.data().records) {
+                      localStorage.setItem(prefix + table,
+                        JSON.stringify(doc.data().records));
+                    }
+                  })
+                  .catch(function(){ /* table not in Firestore yet — OK */ });
+    });
+    Promise.all(promises).then(function() {
+      if (typeof DB !== 'undefined') DB.invalidateCache();
+      if (callback) callback();
+    });
+  }
 
   function _fbOnAuthState(user) {
     var overlay = document.getElementById('login-overlay');
@@ -1674,18 +1709,20 @@
     if (user) {
       localStorage.setItem('rica_un_v4', user.uid);
       localStorage.setItem('rica_active_user', user.uid);
-      if (typeof DB !== 'undefined') DB.invalidateCache();
-      if (typeof seedDatabase === 'function' &&
-          localStorage.getItem('rica_' + user.uid + '_seeded') !== '1') {
-        seedDatabase();
-      }
       var dn = user.displayName || user.email || '';
       var snEl = document.getElementById('brand-name-sidebar');
       if (snEl) snEl.textContent = dn;
       var sbEl = document.getElementById('brand-sub-sidebar');
       if (sbEl) sbEl.textContent = 'Management';
-      if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
-      if (appEl)   appEl.style.visibility = 'visible';
+      /* Load data from Firestore first, THEN show app */
+      _fsLoadAll(user.uid, function() {
+        /* Seed only if no data loaded from Firestore */
+        var prefix = 'rica_' + user.uid + '_';
+        var hasData = localStorage.getItem(prefix + 'orders');
+        if (!hasData && typeof seedDatabase === 'function') seedDatabase();
+        if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
+        if (appEl)   appEl.style.visibility = 'visible';
+      });
     } else {
       if (typeof DB !== 'undefined') DB.invalidateCache();
       sessionStorage.clear();
@@ -1709,6 +1746,16 @@
         appId:             "1:211490839079:web:ab3f51aace86496acb8c02"
       });
       _firebaseAuth = firebase.auth();
+      _fsDb         = firebase.firestore();
+      /* Enable offline persistence (works even without internet) */
+      _fsDb.enablePersistence({ synchronizeTabs: true })
+           .catch(function(e){
+             if (e.code === 'failed-precondition') {
+               console.warn('Firestore persistence: multiple tabs open');
+             } else if (e.code === 'unimplemented') {
+               console.warn('Firestore persistence: not supported in this browser');
+             }
+           });
       _firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       _firebaseAuth.onAuthStateChanged(_fbOnAuthState);
       window._cloudSyncEnabled = true;
@@ -1722,7 +1769,8 @@
   }
   </script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" onload="_fbInit()"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js" onload="_fbInit()"></script>
 </head>
 <body>
 
@@ -4484,6 +4532,8 @@ const DB = (() => {
     var k = _ck(table);
     _cache[k] = records;
     localStorage.setItem(k, JSON.stringify(records));
+    /* Sync to Firestore if available */
+    if (typeof _fsSave === 'function') _fsSave(table, records);
   }
   function nextId(table) {
     var recs = getAll(table);
