@@ -1703,14 +1703,20 @@
             localStorage.removeItem(prefix + table);
           }
           if (typeof DB !== 'undefined') DB.invalidateCache();
-          /* Re-render everything */
-          setTimeout(function() {
-            if (typeof updateStatusBar    === 'function') updateStatusBar();
-            if (typeof renderCurrentTable === 'function') renderCurrentTable();
-            if (typeof renderDashboard    === 'function') renderDashboard();
-            if (typeof renderKPICards     === 'function') renderKPICards();
-            if (typeof syncKPIs           === 'function') syncKPIs();
-          }, 100);
+          /* Only re-render if update came from ANOTHER device (not local write) */
+          var isFromServer = !doc.metadata.hasPendingWrites && !doc.metadata.fromCache;
+          if (isFromServer) {
+            setTimeout(function() {
+              if (typeof updateStatusBar    === 'function') updateStatusBar();
+              if (typeof renderCurrentTable === 'function') renderCurrentTable();
+              if (typeof renderDashboard    === 'function') renderDashboard();
+              if (typeof renderKPICards     === 'function') renderKPICards();
+              if (typeof syncKPIs           === 'function') syncKPIs();
+            }, 100);
+          } else {
+            /* Local write — just update badges quietly */
+            if (typeof updateStatusBar === 'function') updateStatusBar();
+          }
         }, function(e){ console.warn('[FS] listener error:', table, e.message); });
       _fsListeners.push(unsub);
     });
