@@ -1682,7 +1682,35 @@
          .catch(function(e){ console.error('[FS] write error on', table, ':', e.code, e.message); });
   }
 
-  /* ── Read all tables from Firestore into localStorage ── */
+  /* ── Real-time listeners — auto-sync every device instantly ── */
+  var _fsListeners = [];
+
+  function _fsStopListeners() {
+    _fsListeners.forEach(function(unsub){ try { unsub(); } catch(e){} });
+    _fsListeners = [];
+  }
+
+  function _fsStartListeners(uid) {
+    _fsStopListeners();
+    var prefix = 'rica_' + uid + '_';
+    _FS_TABLES.forEach(function(table) {
+      var unsub = _fsDb.collection('rica_data').doc(uid + '_' + table)
+        .onSnapshot(function(doc) {
+          if (doc.exists && Array.isArray(doc.data().records)) {
+            localStorage.setItem(prefix + table, JSON.stringify(doc.data().records));
+            console.log('[FS] realtime update:', table, doc.data().records.length, 'rows');
+          } else {
+            localStorage.removeItem(prefix + table);
+          }
+          if (typeof DB !== 'undefined') DB.invalidateCache();
+          if (typeof updateStatusBar    === 'function') updateStatusBar();
+          if (typeof renderCurrentTable === 'function') renderCurrentTable();
+        }, function(e){ console.warn('[FS] listener error:', table, e.message); });
+      _fsListeners.push(unsub);
+    });
+  }
+
+  /* ── One-time load then start listeners ── */
   function _fsLoadAll(uid, callback) {
     var prefix = 'rica_' + uid + '_';
     var done = 0;
@@ -1693,8 +1721,7 @@
            .get()
            .then(function(doc) {
              if (doc.exists && Array.isArray(doc.data().records) && doc.data().records.length > 0) {
-               localStorage.setItem(prefix + table,
-                 JSON.stringify(doc.data().records));
+               localStorage.setItem(prefix + table, JSON.stringify(doc.data().records));
                loadedAny = true;
                console.log('[FS] loaded:', table, doc.data().records.length, 'rows');
              }
@@ -1704,6 +1731,8 @@
              done++;
              if (done === total) {
                if (typeof DB !== 'undefined') DB.invalidateCache();
+               /* Start real-time listeners after initial load */
+               _fsStartListeners(uid);
                if (callback) callback(loadedAny);
              }
            });
@@ -1740,6 +1769,7 @@
       });
     } else {
       _fsUid = null;
+      _fsStopListeners();
       if (typeof DB !== 'undefined') DB.invalidateCache();
       sessionStorage.clear();
       if (overlay) { overlay.style.display = 'flex'; overlay.style.opacity = '1'; }
