@@ -1660,30 +1660,61 @@
 </style>
 
   <!-- ═══════════════════════════════════════
-       FIREBASE — Cloud sync (optional)
-       Set RICA_FIREBASE_CONFIG in your hosting to enable.
-       Without it, app runs 100% offline (localStorage only).
+       FIREBASE AUTH — Cross-device login
   ═══════════════════════════════════════ -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script>
-  /* ── Firebase Cloud Sync Layer ──────────────────────────────
-     HOW TO ENABLE:
-     1. Go to console.firebase.google.com
-     2. Create project → Add web app → copy config
-     3. Replace the config object below with yours
-     4. Host the file (GitHub Pages / Firebase Hosting)
-     ──────────────────────────────────────────────────────── */
-  var RICA_FIREBASE_CONFIG = null; // Set this to enable cloud sync
-  /* Example:
-  var RICA_FIREBASE_CONFIG = {
-    apiKey: "AIza...",
-    authDomain: "yourapp.firebaseapp.com",
-    projectId: "yourapp",
-    storageBucket: "yourapp.appspot.com",
-    messagingSenderId: "123456",
-    appId: "1:123:web:abc"
-  };
-  */
-  window._cloudSyncEnabled = false;
+  var _firebaseApp  = firebase.initializeApp({
+    apiKey:            "AIzaSyDSZKfdOxbJqqMeGbEdcjDwIgzG7X5KdLE",
+    authDomain:        "rica-426b9.firebaseapp.com",
+    projectId:         "rica-426b9",
+    storageBucket:     "rica-426b9.firebasestorage.app",
+    messagingSenderId: "211490839079",
+    appId:             "1:211490839079:web:ab3f51aace86496acb8c02"
+  });
+  var _firebaseAuth = firebase.auth();
+
+  /* Persist session across tabs & browser restarts */
+  _firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
+  /* Central auth state listener — single source of truth */
+  _firebaseAuth.onAuthStateChanged(function(user) {
+    var overlay = document.getElementById('login-overlay');
+    var appEl   = document.getElementById('app');
+    if (user) {
+      /* ── SIGNED IN ── */
+      /* Use Firebase UID as DB namespace so each user's data is isolated */
+      localStorage.setItem('rica_un_v4', user.uid);
+      localStorage.setItem('rica_active_user', user.uid);
+      if (typeof DB !== 'undefined') DB.invalidateCache();
+      if (typeof seedDatabase === 'function' &&
+          localStorage.getItem('rica_' + user.uid + '_seeded') !== '1') {
+        seedDatabase();
+      }
+      /* Restore display name in sidebar */
+      var _displayName = user.displayName || user.email || '';
+      var _snEl = document.getElementById('brand-name-sidebar');
+      if (_snEl) _snEl.textContent = _displayName;
+      var _subEl = document.getElementById('brand-sub-sidebar');
+      if (_subEl) _subEl.textContent = 'Management';
+      /* Show app */
+      if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
+      if (appEl)   appEl.style.visibility = 'visible';
+    } else {
+      /* ── SIGNED OUT ── */
+      if (typeof DB !== 'undefined') DB.invalidateCache();
+      sessionStorage.clear();
+      if (overlay) { overlay.style.display = 'flex'; overlay.style.opacity = '1'; }
+      if (appEl)   appEl.style.visibility = 'hidden';
+      setTimeout(function() {
+        var el = document.getElementById('login-username');
+        if (el) el.focus();
+      }, 400);
+    }
+  });
+
+  window._cloudSyncEnabled = true;
   </script>
 </head>
 <body>
@@ -9833,136 +9864,86 @@ function doSignUp() {
  var confirm   = document.getElementById('signup-confirm').value;
  var email     = (document.getElementById('signup-email').value || '').trim();
  var phone     = (document.getElementById('signup-phone').value || '').trim();
- var firstname = (document.getElementById('signup-firstname') ? document.getElementById('signup-firstname').value || '' : '').trim();
- var lastname  = (document.getElementById('signup-lastname')  ? document.getElementById('signup-lastname').value  || '' : '').trim();
- var sqKey     = (document.getElementById('signup-sq-select')  ? document.getElementById('signup-sq-select').value  || '' : '');
- var sqAnswer  = (document.getElementById('signup-sq-answer')  ? document.getElementById('signup-sq-answer').value  || '' : '').trim().toLowerCase();
- var errEl    = document.getElementById('signup-error');
+ var firstname = ((document.getElementById('signup-firstname') || {}).value || '').trim();
+ var lastname  = ((document.getElementById('signup-lastname')  || {}).value  || '').trim();
+ var sqKey     = ((document.getElementById('signup-sq-select') || {}).value  || '');
+ var sqAnswer  = ((document.getElementById('signup-sq-answer') || {}).value  || '').trim().toLowerCase();
+ var errEl     = document.getElementById('signup-error');
 
  errEl.style.display = 'none';
-
  function showErr(msg) { errEl.textContent = msg; errEl.style.display = 'block'; }
 
  var termsBox = document.getElementById('signup-terms');
  if (!termsBox || !termsBox.checked) { showErr('You must agree to the terms & conditions to continue.'); return; }
  if (!username || !password || !confirm) { showErr('Username and password are required.'); return; }
  if (username.length < 3) { showErr('Username must be at least 3 characters.'); return; }
- if (!/^[A-Za-z0-9_-؀-ۿ]+$/.test(username)) { showErr('Username: letters, numbers, _ and - only.'); return; }
+ if (!/^[A-Za-z0-9_\-\u0600-\u06FF]+$/.test(username)) { showErr('Username: letters, numbers, _ and - only.'); return; }
  if (password.length < 6) { showErr('Password must be at least 6 characters.'); return; }
  if (password !== confirm) { showErr('Passwords do not match.'); return; }
  if (!email) { showErr('Email address is required to create an account.'); document.getElementById('signup-email').focus(); return; }
  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email address.'); document.getElementById('signup-email').focus(); return; }
- if (!sqKey) { showErr('Please choose a security question.'); return; }
+ if (!sqKey)    { showErr('Please choose a security question.'); return; }
  if (!sqAnswer) { showErr('Please enter your answer to the security question.'); return; }
 
- // Only ACTIVE accounts block re-registration (deleted and terminated are allowed to re-register)
- var accounts = getAccounts();
- var isActive = function(a) { return !a.terminated && !a.deleted; };
+ var fullName = (firstname + ' ' + lastname).trim() || username;
 
- var existing = accounts.find(function(a){
-   return isActive(a) && a.username.toLowerCase() === username.toLowerCase();
- });
- if (existing) { showErr('This username already exists. Please choose a different one.'); return; }
+ /* Create account in Firebase Auth */
+ _firebaseAuth.createUserWithEmailAndPassword(email, password)
+   .then(function(cred) {
+     /* Store display name in Firebase profile */
+     return cred.user.updateProfile({ displayName: fullName });
+   })
+   .then(function() {
+     /* Save extra data in localStorage under the Firebase UID */
+     var uid = _firebaseAuth.currentUser.uid;
+     localStorage.setItem('rica_un_v4', uid);
+     localStorage.setItem('rica_active_user', uid);
+     DB.invalidateCache();
 
- // Block duplicate email (active accounts only)
- if (email) {
-   var dupEmail = accounts.find(function(a){
-     return isActive(a) && a.email && a.email.toLowerCase() === email.toLowerCase();
+     /* Store supplementary profile data locally */
+     setUserItem('rica_display_name', fullName);
+     setUserItem('rica_recovery_email', email);
+     setUserItem('rica_recovery_phone', phone);
+     setUserItem('rica_username_display', username);
+     /* Security question (stored locally only) */
+     localStorage.setItem('rica_sq_key_'    + uid, sqKey);
+     localStorage.setItem('rica_sq_answer_' + uid, sqAnswer);
+
+     /* Seed fresh data for new account */
+     if (typeof seedDatabase === 'function') seedDatabase();
+
+     _appJustUnlocked = true;
+     setTimeout(function() { _appJustUnlocked = false; }, 800);
+
+     /* Go back to login with success message */
+     hideSignUp();
+     var loginOverlay = document.getElementById('login-overlay');
+     loginOverlay.style.opacity = '0';
+     loginOverlay.style.display = 'flex';
+     setTimeout(function() {
+       loginOverlay.style.transition = 'opacity 0.3s ease';
+       loginOverlay.style.opacity = '1';
+     }, 10);
+     var loginUsernameEl = document.getElementById('login-username');
+     if (loginUsernameEl) loginUsernameEl.value = email;
+     var loginErrEl = document.getElementById('login-error');
+     if (loginErrEl) {
+       loginErrEl.textContent = '✅ Account created! Please sign in to continue.';
+       loginErrEl.style.display = 'block';
+       loginErrEl.style.background = '#dcfce7';
+       loginErrEl.style.color = '#166534';
+     }
+     /* Sign out immediately so user goes through proper login flow */
+     return _firebaseAuth.signOut();
+   })
+   .catch(function(err) {
+     var msg = 'Registration failed. Please try again.';
+     if (err.code === 'auth/email-already-in-use') msg = 'This email is already linked to an account.';
+     if (err.code === 'auth/invalid-email')        msg = 'Please enter a valid email address.';
+     if (err.code === 'auth/weak-password')        msg = 'Password is too weak. Use at least 6 characters.';
+     if (err.code === 'auth/network-request-failed') msg = 'Network error. Check your connection.';
+     showErr(msg);
    });
-   if (dupEmail) { showErr('Sorry, this email address is already linked to another account.'); return; }
- }
-
- // Block duplicate phone (active accounts only)
- if (phone) {
-   var dupPhone = accounts.find(function(a){
-     return isActive(a) && a.phone && a.phone.replace(/\s/g,'') === phone.replace(/\s/g,'');
-   });
-   if (dupPhone) { showErr('Sorry, this phone number is already linked to another account.'); return; }
- }
-
- // Save new account to accounts array
- var newAccount = {
-   username:  username,
-   firstname: firstname,
-   lastname:  lastname,
-   password:  password,
-   email:     email,
-   phone:     phone,
-   sq_key:    sqKey,
-   sq_answer: sqAnswer,
-   created:   new Date().toISOString()
- };
- accounts.push(newAccount);
- saveAccounts(accounts);
-
- // Also update active user keys for backward compat
- localStorage.setItem(LS_USERNAME_KEY, username);  // sets DB namespace
- localStorage.setItem('rica_active_user', username.toLowerCase()); // permanent DB key
- localStorage.setItem(LS_PASSWORD_KEY, password);
- setUserItem('rica_recovery_email', email);
- setUserItem('rica_recovery_phone', phone);
- localStorage.setItem('rica_sq_key_' + username, sqKey);
- localStorage.setItem('rica_sq_answer_' + username, sqAnswer);
- localStorage.setItem(LS_SIGNUP_DONE, '1');
- AUTH_USERNAME = username;
- localStorage.setItem('rica_active_user', username.toLowerCase()); // permanent — survives tab close
-
- var hasCustomLogo = !!getUserItem(LOGO_KEY);
- if (!hasCustomLogo) applyLogoLetter(username);
-
- var displayEl = document.getElementById('account-username-display');
- if (displayEl) displayEl.textContent = username;
-
- // Show full name in sidebar if provided
- var fullName = (firstname + ' ' + lastname).trim();
- var sidebarName = document.getElementById('brand-name-sidebar');
- var sidebarSub  = document.getElementById('brand-sub-sidebar');
- if (sidebarName) sidebarName.textContent = fullName || username;
- if (sidebarSub)  sidebarSub.textContent  = 'Management';
- setUserItem('rica_display_name', fullName || username);
-
- sessionStorage.setItem(SS_SESSION_KEY, '1');
-
- // Suppress all app keyboard shortcuts for 800ms after signup
- if (document.activeElement) document.activeElement.blur();
- _appJustUnlocked = true;
- setTimeout(function() { _appJustUnlocked = false; }, 800);
-
- // Reset all app data — fresh start for new account
- ['orders','order_items','inventory','finance','kpis','pricing','products','customers','shipping','returns'].forEach(function(t) {
-   localStorage.removeItem(DB.getKeyPrefix() + t);
- });
- localStorage.removeItem(DB.getKeyPrefix() + 'seeded');
- localStorage.removeItem(DB.getKeyPrefix() + 'deduped');
- localStorage.removeItem('rica_logo');
- if (typeof seedDatabase === 'function') seedDatabase();
-
- // Clear session so user must Sign In manually
- sessionStorage.removeItem(SS_SESSION_KEY);
- localStorage.removeItem(LS_USERNAME_KEY);
- localStorage.removeItem(LS_PASSWORD_KEY);
- AUTH_USERNAME = null;
-
- // Go to Sign In with success message
- hideSignUp();
- var loginOverlay = document.getElementById('login-overlay');
- loginOverlay.style.opacity = '0';
- loginOverlay.style.display = 'flex';
- setTimeout(function() {
-   loginOverlay.style.transition = 'opacity 0.3s ease';
-   loginOverlay.style.opacity = '1';
- }, 10);
-
- // Pre-fill email and show success hint
- var loginUsernameEl = document.getElementById('login-username');
- if (loginUsernameEl) loginUsernameEl.value = email;
- var loginErrEl = document.getElementById('login-error');
- if (loginErrEl) {
-   loginErrEl.textContent = '✅ Account created! Please sign in to continue.';
-   loginErrEl.style.display = 'block';
-   loginErrEl.style.background = '#dcfce7';
-   loginErrEl.style.color = '#166534';
- }
 }
 
 function getAccounts() {
@@ -10381,153 +10362,102 @@ function verifyOTP() {
 
 function submitNewPassword() {
  if (!_otpVerified) return;
- var newPw = document.getElementById('forgot-new-pw').value;
+ var newPw     = document.getElementById('forgot-new-pw').value;
  var confirmPw = document.getElementById('forgot-confirm-pw').value;
- var errEl = document.getElementById('forgot-pw-error');
+ var errEl     = document.getElementById('forgot-pw-error');
  errEl.style.display = 'none';
 
  if (!newPw || newPw.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.style.display = 'block'; return; }
  if (newPw !== confirmPw) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
 
- // Update the account that was found in step 0
- var targetUsername = _forgotAccount ? _forgotAccount.username : getActiveUsername();
- var accounts = getAccounts();
- var idx2 = accounts.findIndex(function(a){ return a.username === targetUsername; });
- if (idx2 >= 0) {
-   accounts[idx2].password = newPw;
-   saveAccounts(accounts);
- }
- // Also update active keys if it's the current user
- if (targetUsername === getActiveUsername()) {
-   localStorage.setItem(LS_PASSWORD_KEY, newPw);
- }
-
- _otpVerified = false;
  var _savedEmail = (_forgotAccount && _forgotAccount.email) ? _forgotAccount.email : '';
- _forgotAccount = null;
- closeForgotPassword();
 
- // Pre-fill email on login screen after password reset
- var loginOverlay = document.getElementById('login-overlay');
- loginOverlay.style.display = 'flex';
- loginOverlay.style.opacity = '1';
- var _g28=document.getElementById('login-username'); if(_g28) _g28.value=_savedEmail;
- var _g29=document.getElementById('login-password'); if(_g29) _g29.value='';
- document.getElementById('login-password').focus();
- var lErr = document.getElementById('login-error');
- if (lErr) { lErr.textContent = 'Password updated successfully! Please sign in.'; lErr.classList.add('show'); }
+ /* Use Firebase to update password */
+ var user = _firebaseAuth.currentUser;
+ if (user) {
+   user.updatePassword(newPw)
+     .then(function() {
+       _otpVerified = false;
+       _forgotAccount = null;
+       closeForgotPassword();
+       var loginOverlay = document.getElementById('login-overlay');
+       loginOverlay.style.display = 'flex';
+       loginOverlay.style.opacity = '1';
+       var _g28 = document.getElementById('login-username'); if (_g28) _g28.value = _savedEmail;
+       var _g29 = document.getElementById('login-password'); if (_g29) _g29.value = '';
+       if (document.getElementById('login-password')) document.getElementById('login-password').focus();
+       var lErr = document.getElementById('login-error');
+       if (lErr) { lErr.textContent = 'Password updated successfully! Please sign in.'; lErr.classList.add('show'); }
+       /* Sign out so user signs in with new password */
+       _firebaseAuth.signOut();
+     })
+     .catch(function(err) {
+       errEl.textContent = 'Failed to update password. Please sign out and try again.';
+       errEl.style.display = 'block';
+     });
+ } else {
+   /* No current user — send password reset email instead */
+   if (_savedEmail) {
+     _firebaseAuth.sendPasswordResetEmail(_savedEmail).then(function() {
+       _otpVerified = false;
+       _forgotAccount = null;
+       closeForgotPassword();
+       var lErr = document.getElementById('login-error');
+       if (lErr) { lErr.textContent = 'Password reset email sent! Check your inbox.'; lErr.classList.add('show'); }
+     });
+   }
+ }
 }
 
 function doLogin() {
- var usernameEl = document.getElementById('login-username');
+ var emailEl  = document.getElementById('login-username');
  var passwordEl = document.getElementById('login-password');
- var errEl = document.getElementById('login-error');
- var btn = document.getElementById('login-btn');
+ var errEl    = document.getElementById('login-error');
+ var btn      = document.getElementById('login-btn');
 
- if (!usernameEl || !passwordEl || !errEl || !btn) return; // Guard: DOM not ready
+ if (!emailEl || !passwordEl || !errEl || !btn) return;
 
- var username = usernameEl.value.trim();
- var password = passwordEl.value; // Do NOT trim password — spaces are significant
+ var email    = (emailEl.value || '').trim();
+ var password = passwordEl.value;
 
- // Reset error visibility before checking
  errEl.classList.remove('show');
+ errEl.style.background = '';
+ errEl.style.color = '';
 
- // Show loading shimmer while processing
+ if (!email || !password) {
+   errEl.textContent = 'Please enter your email and password.';
+   errEl.classList.add('show');
+   return;
+ }
+
  btn.disabled = true;
  btn.classList.add('loading');
  btn.textContent = 'Signing in…';
 
- // Small delay purely for the shimmer animation — 280 ms feels instant but
- // still shows the loading state so the user gets feedback
- setTimeout(function() {
- btn.disabled = false;
- btn.classList.remove('loading');
- btn.textContent = 'Sign In';
-
- var activePassword = getActivePassword();
-
- // Check if this account has been terminated
- var _allAccts = getAccounts();
- // Primary: search by email. Fallback: search by username (for old accounts without email)
- var _thisAcct = _allAccts.find(function(a){ return a.email && a.email.toLowerCase() === username.toLowerCase(); });
- if (!_thisAcct) {
-   _thisAcct = _allAccts.find(function(a){ return a.username && a.username.toLowerCase() === username.toLowerCase(); });
- }
- if (_thisAcct && _thisAcct.terminated) {
-   errEl.classList.remove('show');
-   void errEl.offsetWidth;
-   errEl.textContent = 'This account has been permanently terminated and cannot be used.';
-   errEl.classList.add('show');
-   passwordEl.value = '';
-   btn.disabled = false;
-   btn.classList.remove('loading');
-   btn.textContent = 'Sign In';
-   return;
- }
- if (_thisAcct && _thisAcct.deleted) {
-   errEl.classList.remove('show');
-   void errEl.offsetWidth;
-   errEl.textContent = 'This account has been deleted. Please create a new account.';
-   errEl.classList.add('show');
-   passwordEl.value = '';
-   btn.disabled = false;
-   btn.classList.remove('loading');
-   btn.textContent = 'Sign In';
-   return;
- }
-
- // Check against accounts array by email
- var _matched = (_thisAcct && _thisAcct.password === password);
-
- if (_matched) {
-  // Sync legacy keys so rest of app (password change etc) works correctly
-  var _acctUsername = _thisAcct.username;
-  localStorage.setItem(LS_USERNAME_KEY, _acctUsername);
-  localStorage.setItem('rica_active_user', _acctUsername.toLowerCase()); // permanent DB key
-  localStorage.setItem(LS_PASSWORD_KEY, _thisAcct.password);
-  // Restore full name in sidebar
-  var _fn = (_thisAcct && _thisAcct.firstname) ? _thisAcct.firstname : '';
-  var _ln = (_thisAcct && _thisAcct.lastname)  ? _thisAcct.lastname  : '';
-  var _fullName = (_fn + ' ' + _ln).trim();
-  setUserItem('rica_display_name', _fullName || _acctUsername);
-  var _ss = document.getElementById('brand-sub-sidebar');
-  if (_ss) _ss.textContent = 'Management';
-  applySidebarFullName();
- }
-
- if (_matched) {
- /* SUCCESS */
- sessionStorage.setItem(SS_SESSION_KEY, '1');
- // Suppress all app keyboard shortcuts for 800ms after login
- if (document.activeElement) document.activeElement.blur();
- _appJustUnlocked = true;
- setTimeout(function() { _appJustUnlocked = false; }, 800);
-
- var overlay = document.getElementById('login-overlay');
- // Apply CSS transition then hide after it completes
- overlay.style.transition = 'opacity 0.4s ease';
- overlay.style.opacity = '0';
- // After 420 ms the fade is done — remove from layout entirely
- setTimeout(function() {
-   overlay.style.display = 'none';
-   overlay.style.transition = '';
-   var appEl = document.getElementById('app');
-   if (appEl) appEl.style.visibility = 'visible';
- }, 420);
-
- } else {
- /* FAILURE */
- // Force a DOM reflow between removing and re-adding 'show'
- // so the shake animation restarts even if it was already showing
- errEl.classList.remove('show');
- void errEl.offsetWidth; // Reflow trigger
- errEl.classList.add('show');
-
- // Clear password only — keep username so user just re-types password
- passwordEl.value = '';
- passwordEl.focus();
- }
- }, 280);
+ _firebaseAuth.signInWithEmailAndPassword(email, password)
+   .then(function() {
+     /* onAuthStateChanged handles showing the app */
+     btn.disabled = false;
+     btn.classList.remove('loading');
+     btn.textContent = 'Sign In';
+     _appJustUnlocked = true;
+     setTimeout(function() { _appJustUnlocked = false; }, 800);
+   })
+   .catch(function(err) {
+     btn.disabled = false;
+     btn.classList.remove('loading');
+     btn.textContent = 'Sign In';
+     passwordEl.value = '';
+     passwordEl.focus();
+     errEl.classList.remove('show');
+     void errEl.offsetWidth;
+     var msg = 'Incorrect email or password.';
+     if (err.code === 'auth/too-many-requests') msg = 'Too many attempts. Please try again later.';
+     if (err.code === 'auth/user-disabled')     msg = 'This account has been disabled.';
+     if (err.code === 'auth/network-request-failed') msg = 'Network error. Check your connection.';
+     errEl.textContent = msg;
+     errEl.classList.add('show');
+   });
 }
 
 /**
@@ -10543,97 +10473,35 @@ function doLogin() {
 function doLogout() {
  var appEl = document.getElementById('app');
  if (appEl) appEl.style.visibility = 'hidden';
- sessionStorage.removeItem(SS_SESSION_KEY);
- closeSettings(); // Close settings panel if open
-
- var overlay = document.getElementById('login-overlay');
- // Make it visible but transparent first, then fade in
- overlay.style.opacity = '0';
- overlay.style.display = 'flex';
- overlay.style.transition = ''; // Clear any lingering inline transition
-
- // Use requestAnimationFrame to ensure the display:flex takes effect
- // before we start the opacity transition (otherwise browser batches them)
- requestAnimationFrame(function() {
- requestAnimationFrame(function() { // Double rAF for guaranteed reflow
- overlay.style.transition = 'opacity 0.4s ease';
- overlay.style.opacity = '1';
+ closeSettings();
+ /* Firebase signOut — onAuthStateChanged will show login overlay */
+ _firebaseAuth.signOut().then(function() {
+   DB.invalidateCache();
+   var unEl  = document.getElementById('login-username');
+   var pwEl  = document.getElementById('login-password');
+   var errEl = document.getElementById('login-error');
+   if (unEl)  unEl.value  = '';
+   if (pwEl)  pwEl.value  = '';
+   if (errEl) errEl.classList.remove('show');
+   var savedBrand = localStorage.getItem(BRAND_KEY) || 'RICA';
+   applyBrandName(savedBrand);
+   setTimeout(function() {
+     var el = document.getElementById('login-username');
+     if (el) el.focus();
+   }, 460);
  });
- });
-
- // Reset all login form state
- var unEl = document.getElementById('login-username');
- var pwEl = document.getElementById('login-password');
- var errEl = document.getElementById('login-error');
- if (unEl) unEl.value = '';
- if (pwEl) pwEl.value = '';
- if (errEl) errEl.classList.remove('show');
-
- // Re-apply brand name so login title never shows username
- var savedBrand = localStorage.getItem(BRAND_KEY) || 'RICA';
- applyBrandName(savedBrand);
-
- // Show username hint
- var hintEl = document.getElementById('login-username-hint');
- if (hintEl) hintEl.textContent = '';
-
- // Focus username after overlay has fully faded in
- setTimeout(function() {
- var el = document.getElementById('login-username');
- if (el) el.focus();
- }, 460);
 }
 
-/* Session check — runs immediately when script is parsed */
-/* This IIFE checks whether the current browser tab already has an active
- session token. If yes, hide the login overlay immediately (no animation
- needed — the app is already authenticated in this tab session).
- If no token exists, ensure the overlay is visible and focus the username.
-
- NOTE: sessionStorage is cleared automatically when the browser tab is
- CLOSED. Refreshing the same tab preserves the session (this is correct
- behaviour — you don't want to re-authenticate every F5 press). */
+/* Session check handled by Firebase onAuthStateChanged (in <head>).
+   Keep app hidden until Firebase confirms auth state. */
 (function checkExistingSession() {
  var overlay = document.getElementById('login-overlay');
  var appEl   = document.getElementById('app');
  if (!overlay) return;
-
- // ── CRITICAL FIX ──────────────────────────────────────────────────
- // rica_un_v4 is the DB namespace key. If it was cleared (e.g. after
- // signup flow) but rica_active_user is still set, restore it so
- // getKeyPrefix() returns the correct user namespace on refresh.
- var _storedUn  = localStorage.getItem('rica_un_v4');
- var _activeUn  = localStorage.getItem('rica_active_user');
- if (!_storedUn && _activeUn) {
-   localStorage.setItem('rica_un_v4', _activeUn);
- }
- // ──────────────────────────────────────────────────────────────────
-
- if (sessionStorage.getItem(SS_SESSION_KEY) === '1') {
-   // Already logged in — show app, hide overlay
-   overlay.style.display = 'none';
-   overlay.style.opacity = '0';
-   overlay.style.transition = '';
-   if (appEl) appEl.style.visibility = 'visible';
-   // Restore display name in sidebar
-   var _dn = getUserItem('rica_display_name');
-   if (_dn) {
-     var _snEl = document.getElementById('brand-name-sidebar');
-     if (_snEl) _snEl.textContent = _dn;
-   }
- } else {
-   // Not logged in — show overlay, keep app hidden until after login
-   overlay.style.display = 'flex';
-   overlay.style.opacity = '1';
-   overlay.style.transition = '';
-   if (appEl) appEl.style.visibility = 'hidden';
-   var hintEl = document.getElementById('login-username-hint');
-   if (hintEl) hintEl.textContent = '';
-   setTimeout(function() {
-     var el = document.getElementById('login-username');
-     if (el) el.focus();
-   }, 400);
- }
+ /* Hide app until Firebase auth state resolves */
+ if (appEl) appEl.style.visibility = 'hidden';
+ overlay.style.display = 'none';
+ overlay.style.opacity = '0';
 })();
 
 /* 
