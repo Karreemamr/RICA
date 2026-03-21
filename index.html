@@ -1729,6 +1729,13 @@
         if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
         if (appEl)   appEl.style.visibility = 'visible';
         console.log('[FS] App ready for user:', user.email);
+        /* Refresh UI after data loaded from Firestore */
+        setTimeout(function() {
+          if (typeof updateStatusBar   === 'function') updateStatusBar();
+          if (typeof renderCurrentTable === 'function') renderCurrentTable();
+          if (typeof renderDashboard    === 'function') renderDashboard();
+          if (typeof renderKPICards     === 'function') renderKPICards();
+        }, 300);
       });
     } else {
       _fsUid = null;
