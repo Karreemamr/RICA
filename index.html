@@ -1662,29 +1662,16 @@
   <!-- ═══════════════════════════════════════
        FIREBASE AUTH — Cross-device login
   ═══════════════════════════════════════ -->
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script>
-  var _firebaseApp  = firebase.initializeApp({
-    apiKey:            "AIzaSyDSZKfdOxbJqqMeGbEdcjDwIgzG7X5KdLE",
-    authDomain:        "rica-426b9.firebaseapp.com",
-    projectId:         "rica-426b9",
-    storageBucket:     "rica-426b9.firebasestorage.app",
-    messagingSenderId: "211490839079",
-    appId:             "1:211490839079:web:ab3f51aace86496acb8c02"
-  });
-  var _firebaseAuth = firebase.auth();
+  /* Stubs — prevent ReferenceError before Firebase loads */
+  var _firebaseAuth = null;
+  var _firebaseApp  = null;
+  window._cloudSyncEnabled = false;
 
-  /* Persist session across tabs & browser restarts */
-  _firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-
-  /* Central auth state listener — single source of truth */
-  _firebaseAuth.onAuthStateChanged(function(user) {
+  function _fbOnAuthState(user) {
     var overlay = document.getElementById('login-overlay');
     var appEl   = document.getElementById('app');
     if (user) {
-      /* ── SIGNED IN ── */
-      /* Use Firebase UID as DB namespace so each user's data is isolated */
       localStorage.setItem('rica_un_v4', user.uid);
       localStorage.setItem('rica_active_user', user.uid);
       if (typeof DB !== 'undefined') DB.invalidateCache();
@@ -1692,17 +1679,14 @@
           localStorage.getItem('rica_' + user.uid + '_seeded') !== '1') {
         seedDatabase();
       }
-      /* Restore display name in sidebar */
-      var _displayName = user.displayName || user.email || '';
-      var _snEl = document.getElementById('brand-name-sidebar');
-      if (_snEl) _snEl.textContent = _displayName;
-      var _subEl = document.getElementById('brand-sub-sidebar');
-      if (_subEl) _subEl.textContent = 'Management';
-      /* Show app */
+      var dn = user.displayName || user.email || '';
+      var snEl = document.getElementById('brand-name-sidebar');
+      if (snEl) snEl.textContent = dn;
+      var sbEl = document.getElementById('brand-sub-sidebar');
+      if (sbEl) sbEl.textContent = 'Management';
       if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
       if (appEl)   appEl.style.visibility = 'visible';
     } else {
-      /* ── SIGNED OUT ── */
       if (typeof DB !== 'undefined') DB.invalidateCache();
       sessionStorage.clear();
       if (overlay) { overlay.style.display = 'flex'; overlay.style.opacity = '1'; }
@@ -1712,10 +1696,33 @@
         if (el) el.focus();
       }, 400);
     }
-  });
+  }
 
-  window._cloudSyncEnabled = true;
+  function _fbInit() {
+    try {
+      _firebaseApp  = firebase.initializeApp({
+        apiKey:            "AIzaSyDSZKfdOxbJqqMeGbEdcjDwIgzG7X5KdLE",
+        authDomain:        "rica-426b9.firebaseapp.com",
+        projectId:         "rica-426b9",
+        storageBucket:     "rica-426b9.firebasestorage.app",
+        messagingSenderId: "211490839079",
+        appId:             "1:211490839079:web:ab3f51aace86496acb8c02"
+      });
+      _firebaseAuth = firebase.auth();
+      _firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+      _firebaseAuth.onAuthStateChanged(_fbOnAuthState);
+      window._cloudSyncEnabled = true;
+    } catch(e) {
+      console.error('Firebase init failed:', e);
+      var overlay = document.getElementById('login-overlay');
+      var appEl   = document.getElementById('app');
+      if (overlay) { overlay.style.display = 'flex'; overlay.style.opacity = '1'; }
+      if (appEl)   appEl.style.visibility = 'hidden';
+    }
+  }
   </script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" onload="_fbInit()"></script>
 </head>
 <body>
 
