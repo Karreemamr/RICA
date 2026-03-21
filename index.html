@@ -1686,14 +1686,16 @@
   function _fsLoadAll(uid, callback) {
     var prefix = 'rica_' + uid + '_';
     var done = 0;
+    var loadedAny = false;
     var total = _FS_TABLES.length;
     _FS_TABLES.forEach(function(table) {
       _fsDb.collection('rica_data').doc(uid + '_' + table)
            .get()
            .then(function(doc) {
-             if (doc.exists && Array.isArray(doc.data().records)) {
+             if (doc.exists && Array.isArray(doc.data().records) && doc.data().records.length > 0) {
                localStorage.setItem(prefix + table,
                  JSON.stringify(doc.data().records));
+               loadedAny = true;
                console.log('[FS] loaded:', table, doc.data().records.length, 'rows');
              }
            })
@@ -1702,11 +1704,11 @@
              done++;
              if (done === total) {
                if (typeof DB !== 'undefined') DB.invalidateCache();
-               if (callback) callback();
+               if (callback) callback(loadedAny);
              }
            });
     });
-    if (total === 0 && callback) callback();
+    if (total === 0 && callback) callback(false);
   }
 
   function _fbOnAuthState(user) {
@@ -1722,16 +1724,15 @@
       var sbEl = document.getElementById('brand-sub-sidebar');
       if (sbEl) sbEl.textContent = 'Management';
       /* Load from Firestore, THEN show app */
-      _fsLoadAll(user.uid, function() {
-        var prefix = 'rica_' + user.uid + '_';
-        var hasOrders = localStorage.getItem(prefix + 'orders');
-        if (!hasOrders && typeof seedDatabase === 'function') seedDatabase();
+      _fsLoadAll(user.uid, function(loadedAny) {
+        /* Only seed if Firestore had NO data at all for this user */
+        if (!loadedAny && typeof seedDatabase === 'function') seedDatabase();
         if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
         if (appEl)   appEl.style.visibility = 'visible';
-        console.log('[FS] App ready for user:', user.email);
+        console.log('[FS] App ready for user:', user.email, '| loaded from cloud:', loadedAny);
         /* Refresh UI after data loaded from Firestore */
         setTimeout(function() {
-          if (typeof updateStatusBar   === 'function') updateStatusBar();
+          if (typeof updateStatusBar    === 'function') updateStatusBar();
           if (typeof renderCurrentTable === 'function') renderCurrentTable();
           if (typeof renderDashboard    === 'function') renderDashboard();
           if (typeof renderKPICards     === 'function') renderKPICards();
