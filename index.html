@@ -1663,50 +1663,57 @@
        FIREBASE AUTH + FIRESTORE — Cloud sync
   ═══════════════════════════════════════ -->
   <script>
-  /* Stubs — prevent ReferenceError before Firebase loads */
   var _firebaseAuth = null;
   var _firebaseApp  = null;
-  var _fsDb         = null;   // Firestore instance
+  var _fsDb         = null;
+  var _fsUid        = null;
   window._cloudSyncEnabled = false;
 
   var _FS_TABLES = ['orders','order_items','inventory','finance','kpis',
                     'pricing','products','customers','shipping','returns','ledger'];
 
-  /* ── Save one table to Firestore ── */
+  /* ── Write one table to Firestore ── */
   function _fsSave(table, records) {
-    if (!_fsDb || !_firebaseAuth || !_firebaseAuth.currentUser) return;
-    var uid = _firebaseAuth.currentUser.uid;
-    _fsDb.collection('users').doc(uid)
-         .collection('tables').doc(table)
-         .set({ records: records, _updated: new Date().toISOString() })
-         .catch(function(e){ console.warn('Firestore write error:', e); });
+    if (!_fsDb || !_fsUid) return;
+    _fsDb.collection('rica_data').doc(_fsUid + '_' + table)
+         .set({ uid: _fsUid, table: table, records: records,
+                ts: new Date().toISOString() })
+         .then(function(){ console.log('[FS] saved:', table, records.length, 'rows'); })
+         .catch(function(e){ console.error('[FS] write error on', table, ':', e.code, e.message); });
   }
 
-  /* ── Load all tables from Firestore → localStorage then show app ── */
+  /* ── Read all tables from Firestore into localStorage ── */
   function _fsLoadAll(uid, callback) {
     var prefix = 'rica_' + uid + '_';
-    var promises = _FS_TABLES.map(function(table) {
-      return _fsDb.collection('users').doc(uid)
-                  .collection('tables').doc(table)
-                  .get()
-                  .then(function(doc) {
-                    if (doc.exists && doc.data().records) {
-                      localStorage.setItem(prefix + table,
-                        JSON.stringify(doc.data().records));
-                    }
-                  })
-                  .catch(function(){ /* table not in Firestore yet — OK */ });
+    var done = 0;
+    var total = _FS_TABLES.length;
+    _FS_TABLES.forEach(function(table) {
+      _fsDb.collection('rica_data').doc(uid + '_' + table)
+           .get()
+           .then(function(doc) {
+             if (doc.exists && Array.isArray(doc.data().records)) {
+               localStorage.setItem(prefix + table,
+                 JSON.stringify(doc.data().records));
+               console.log('[FS] loaded:', table, doc.data().records.length, 'rows');
+             }
+           })
+           .catch(function(e){ console.warn('[FS] load error:', table, e.message); })
+           .finally(function() {
+             done++;
+             if (done === total) {
+               if (typeof DB !== 'undefined') DB.invalidateCache();
+               if (callback) callback();
+             }
+           });
     });
-    Promise.all(promises).then(function() {
-      if (typeof DB !== 'undefined') DB.invalidateCache();
-      if (callback) callback();
-    });
+    if (total === 0 && callback) callback();
   }
 
   function _fbOnAuthState(user) {
     var overlay = document.getElementById('login-overlay');
     var appEl   = document.getElementById('app');
     if (user) {
+      _fsUid = user.uid;
       localStorage.setItem('rica_un_v4', user.uid);
       localStorage.setItem('rica_active_user', user.uid);
       var dn = user.displayName || user.email || '';
@@ -1714,16 +1721,17 @@
       if (snEl) snEl.textContent = dn;
       var sbEl = document.getElementById('brand-sub-sidebar');
       if (sbEl) sbEl.textContent = 'Management';
-      /* Load data from Firestore first, THEN show app */
+      /* Load from Firestore, THEN show app */
       _fsLoadAll(user.uid, function() {
-        /* Seed only if no data loaded from Firestore */
         var prefix = 'rica_' + user.uid + '_';
-        var hasData = localStorage.getItem(prefix + 'orders');
-        if (!hasData && typeof seedDatabase === 'function') seedDatabase();
+        var hasOrders = localStorage.getItem(prefix + 'orders');
+        if (!hasOrders && typeof seedDatabase === 'function') seedDatabase();
         if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
         if (appEl)   appEl.style.visibility = 'visible';
+        console.log('[FS] App ready for user:', user.email);
       });
     } else {
+      _fsUid = null;
       if (typeof DB !== 'undefined') DB.invalidateCache();
       sessionStorage.clear();
       if (overlay) { overlay.style.display = 'flex'; overlay.style.opacity = '1'; }
@@ -1747,20 +1755,14 @@
       });
       _firebaseAuth = firebase.auth();
       _fsDb         = firebase.firestore();
-      /* Enable offline persistence (works even without internet) */
-      _fsDb.enablePersistence({ synchronizeTabs: true })
-           .catch(function(e){
-             if (e.code === 'failed-precondition') {
-               console.warn('Firestore persistence: multiple tabs open');
-             } else if (e.code === 'unimplemented') {
-               console.warn('Firestore persistence: not supported in this browser');
-             }
-           });
-      _firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-      _firebaseAuth.onAuthStateChanged(_fbOnAuthState);
+      _firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+        .then(function() {
+          _firebaseAuth.onAuthStateChanged(_fbOnAuthState);
+        });
       window._cloudSyncEnabled = true;
+      console.log('[FS] Firebase initialized OK');
     } catch(e) {
-      console.error('Firebase init failed:', e);
+      console.error('[FS] Firebase init failed:', e);
       var overlay = document.getElementById('login-overlay');
       var appEl   = document.getElementById('app');
       if (overlay) { overlay.style.display = 'flex'; overlay.style.opacity = '1'; }
